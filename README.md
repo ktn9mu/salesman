@@ -14,3 +14,14 @@ usage:<br>
 python routeplot.py cities.dat [cities2.dat] -r [="NA"],"World"'<br>
 NA = North America, World = Mercator projection of the whole earth
 * earth.C : (just for fun) plotting the globe in ROOT
+
+
+Work in progress:
+
+cities150 317298.645km 49501.533km 28.314s
+cities1k 732177.737km 111640.589km 255.087s
+cities2k (not yet)
+
+How to run: 
+cities150:    ./sales cities150.dat route150.dat an150.csv
+cities1k:    ./sales cities1k.dat route1k.dat an1k.csv
