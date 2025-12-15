@@ -23,5 +23,7 @@ cities1k 732177.737km 111640.589km 255.087s
 cities2k (not yet)
 
 How to run: 
+
+build:   g++ -O2 -std=c++17 sales.cpp -o sales
 cities150:    ./sales cities150.dat route150.dat an150.csv
 cities1k:    ./sales cities1k.dat route1k.dat an1k.csv
