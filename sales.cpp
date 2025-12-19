@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <ctime>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -26,6 +27,11 @@ struct Params {
   // SA controls
   int steps = 3000000;
   double T0 = 5000.0;
+  // auto-estimate initial temperature ("melting" temperature)
+  bool autoT0 = true;       // if true, estimate T0 from sampled uphill moves
+  int t0Samples = 0;        // 0 => choose automatically based on N
+  double t0Accept = 0.80;   // target accept prob for the max sampled uphill move
+
   double alpha = 0.999997;
   int printEvery = 200000;
   int schedEvery = 2000;
@@ -44,6 +50,7 @@ static void Die(const std::string& msg) {
 
 static Params ParseArgs(int argc, char** argv) {
   Params p;
+  bool userSetT0 = false;
   if (argc < 2) {
     Die("Usage: tsp_sa_alt cities.dat [routeout.dat] [schedule.csv] "
         "[--steps N] [--T0 X] [--alpha X] [--printEvery N] [--schedEvery N] "
@@ -64,7 +71,10 @@ static Params ParseArgs(int argc, char** argv) {
     };
 
     if (a == "--steps") p.steps = std::stoi(need("--steps"));
-    else if (a == "--T0") p.T0 = std::stod(need("--T0"));
+    else if (a == "--T0") { p.T0 = std::stod(need("--T0")); userSetT0 = true; }
+    else if (a == "--autoT0") p.autoT0 = (std::stoi(need("--autoT0")) != 0);
+    else if (a == "--t0Samples") p.t0Samples = std::stoi(need("--t0Samples"));
+    else if (a == "--t0Accept") p.t0Accept = std::stod(need("--t0Accept"));
     else if (a == "--alpha") p.alpha = std::stod(need("--alpha"));
     else if (a == "--printEvery") p.printEvery = std::stoi(need("--printEvery"));
     else if (a == "--schedEvery") p.schedEvery = std::stoi(need("--schedEvery"));
@@ -78,6 +88,9 @@ static Params ParseArgs(int argc, char** argv) {
   if (p.swapProb < 0.0 || p.swapProb > 1.0) Die("Error: --swapProb must be in [0,1].");
   if (p.printEvery <= 0) p.printEvery = 200000;
   if (p.schedEvery <= 0) p.schedEvery = 2000;
+  if (p.t0Samples < 0) Die("Error: --t0Samples must be >= 0.");
+  if (p.t0Accept <= 0.0 || p.t0Accept >= 1.0) Die("Error: --t0Accept must be in (0,1).");
+  if (userSetT0) p.autoT0 = false;
 
   return p;
 }
@@ -129,6 +142,10 @@ static double TourLengthKm(const std::vector<Coord>& route) {
   return sum;
 }
 
+
+static double EstimateInitialT0(const std::vector<Coord>& cur, class Annealer& A,
+                                double swapProb, int samples, double targetAcceptProb);
+
 class Annealer {
  public:
   explicit Annealer(uint64_t seed)
@@ -167,6 +184,40 @@ class Annealer {
   std::uniform_real_distribution<double> u01_;
 };
 
+static double EstimateInitialT0(const std::vector<Coord>& cur,
+                                Annealer& A,
+                                double swapProb,
+                                int samples,
+                                double targetAcceptProb) {
+  // Slide idea: run hot trials, collect uphill costs dE, pick T0 so that
+  // exp(-dE_max/T0) ~= targetAcceptProb  =>  T0 = dE_max / (-ln(p))
+  if (samples <= 0) samples = 1000;
+
+  const double Ecur = TourLengthKm(cur);
+  std::vector<Coord> trial = cur;
+
+  double dEmax = 0.0;
+
+  for (int k = 0; k < samples; ++k) {
+    trial = cur;
+
+    if (A.U01() < swapProb) A.SwapTwo(trial);
+    else A.ReverseSegment(trial);
+
+    const double Etrial = TourLengthKm(trial);
+    const double dE = Etrial - Ecur;
+    if (dE > dEmax) dEmax = dE;
+  }
+
+  if (dEmax <= 0.0) return 1.0;
+
+  double p = targetAcceptProb;
+  if (p < 0.50) p = 0.50;
+  if (p > 0.95) p = 0.95;
+
+  return dEmax / (-std::log(p));
+}
+
 static void WriteRoute(const std::string& fname, const std::vector<Coord>& best) {
   std::ofstream out(fname);
   if (!out) Die("Error: cannot write route file " + fname);
@@ -198,6 +249,21 @@ int main(int argc, char** argv) {
   sched << "T,current_km,best_km\n";
 
   Annealer A(seed);
+
+  if (P.autoT0) {
+    int n = (int)cur.size();
+    int samples = P.t0Samples;
+    if (samples <= 0) {
+      // Keep this modest: each sample computes a full tour length (O(N)).
+      samples = std::min(20000, 10 * n);
+      samples = std::max(samples, 2000);
+    }
+    double est = EstimateInitialT0(cur, A, P.swapProb, samples, P.t0Accept);
+    std::cout << "AutoT0: sampled " << samples
+              << " moves, set T0=" << std::setprecision(3) << est
+              << " (target accept~" << P.t0Accept << ")\n";
+    P.T0 = est;
+  }
 
   double T = P.T0;
   auto t0 = std::chrono::steady_clock::now();
