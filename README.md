@@ -1,4 +1,3 @@
-
 How to run: 
 
 build:   g++ -O2 -std=c++17 sales.cpp -o sales
@@ -34,7 +33,7 @@ Random swap (probability = swapProb, default 0.05): two random cities are swappe
 Random segment reversal (probability = 1 − swapProb, default 0.95): a randomly chosen city segment is reversed (2-opt style) to efficiently remove path crossings.
 
 The change in distance is computed as DeltaE = L_trial − L_current.
-The trial is accepted if DeltaE <= 0, otherwise with probability P = exp(−DeltaE / T).
+The trial is accepted if DeltaE ≤ 0, otherwise with probability P = exp(−DeltaE / T).
 
 The initial temperature T0 is chosen automatically by sampling many trial moves, taking the largest uphill DeltaE_max, and setting T0 such that
 exp(−DeltaE_max / T0) ≈ p,with p ≈ 0.8.
